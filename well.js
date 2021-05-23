@@ -9,11 +9,78 @@
 // @grant GM_addStyle
 // ==/UserScript==
 
-//console.log(["Tm running", location.search]);
+console.log(["Tm running", location.search]);
 if (/\bsel=-182985865\b/.test (location.search) ) {
+	const actions = {
+		"progress": 1,
+		"fight": 2,
+		"rest": 3,
+		'fishing_hub': 4,
+		'interrupt': 5,
+		'use_potion': 6,
+		'last_lesser_action': 7,
+		'stand_in_hub': 8,
+		'grab_fish': 9,
+		'open_chest': 10,
+	}
+
+	let player_state = {
+		"running": false,
+		'debug': false,
+		'input_enabled': false,
+		"hp": -1,
+		"max_hp": -1,
+		'traumas': 0,
+		"getHealthPercentage": function() {
+			return this.hp / this.max_hp;
+		},
+		"action": actions.progress,
+		"fishing": {
+			"bait_left": 0,
+			'grab_fish': false
+		},
+		"fight": {
+			'using_potion': false,
+			'unable_to_use_skills': true,
+			'potions': -1,
+			'enemy_max_hp': null,
+			'enemy_hp': null,
+			'enemy_damage': null,
+			'damage_to_enemy': null,
+			'unable_to_determine_potion': false,
+			'enemy_enrages': 0,
+			'initial_enemy_damage': null,
+		},
+		'rest': {
+			'already_cooked': false,
+		},
+		"confirm_exit": false,
+		'lesser_button_labels': [],
+		'settings': {
+			'available_potions': {
+
+			},
+			'get_available_potions': function () {
+				let potions = {};
+				for (index in this.available_potions) {
+					let i = this.available_potions[index];
+					if (i.enabled) {
+						potions[index] = i;
+					}
+				}
+				return potions;
+			}
+		}
+	}
+
+	let log = (value) => {
+		if (player_state.debug) {
+			console.log(value);
+		}
+	}
 
 	// eventMachine START
-	//console.log("Event machine start");
+	log("Event machine start");
 	const subscriptions = { }
 
 	let getIdGenerator = function () {
@@ -55,57 +122,20 @@ if (/\bsel=-182985865\b/.test (location.search) ) {
 		'before_action_change': 12,
 		'after_action_change': 13,
 	}
-	//console.log("Event machine end");
+	log("Event machine end");
 	// eventMachine END
 
-	const constants = {
-		"WELL_HREF": "https://vk.com/welldungeon"
+	let constants = {
+		"WELL_HREF": "https://vk.com/welldungeon",
+
 	}
 
 	const texts = {
 		"GRAB_FISH": "Поплавок полностью ушел под воду!",
 	}
 
-	const actions = {
-		"progress": 1,
-		"fight": 2,
-		"rest": 3,
-		'fishing_hub': 4,
-		'interrupt': 5,
-		'use_potion': 6,
-		'lesser_action': 7,
-		'stand_in_hub': 8,
-		'grab_fish': 9,
-	}
-
-	let player_state = {
-		"running": false,
-		"hp": -1,
-		"max_hp": -1,
-		"getHealthPercentage": function() {
-			return this.hp / this.max_hp;
-		},
-		"action": actions.progress,
-		"fishing": {
-			"bait_left": 0,
-			'grab_fish': false
-		},
-		"fight": {
-			'using_potion': false,
-
-			'heal_used': false,
-			'potions': -1,
-			'used_potion': false,
-			'enemy_max_hp': null,
-			'enemy_hp': null,
-			'enemy_damage': null,
-			'damage_to_enemy': null,
-		},
-		"confirm_exit": false
-	}	
-
 	// buttons START
-	//console.log("Buttons start");
+	log("Buttons start");
 
 	let button_labels = {
 		"well": "В колодец",
@@ -121,23 +151,38 @@ if (/\bsel=-182985865\b/.test (location.search) ) {
 		"skin": "Освеживать",
 		"search": "Обыскать",
 		"interrupt": "Прервать",
+		'back': 'Назад',
 		"fishing": {
 			"start_fishing": "Закинуть удочку",
 			"stop_fishing": "Прервать рыбалку",
 			"grab_fish": "Подсечь",
+		},
+		'potions': {
+			'weak': 'Слабое зелье',
+			'simple': 'Простое зелье',
+			'common': 'Обычное зелье',
+			'big': 'Большое зелье',
+			'strong': 'Сильное зелье',
+		},
+		'utility': {
+			'open_chest': 'Открыть',
+			"continue": "Продолжить",
+			"be_free": "Освободиться",
 		}
 	}
 
 	let button_helper = {
 		"is_button_available": (text) => {
-			for (btn of document.querySelectorAll('button[type="text"]')) {
-				for (chd of btn.childNodes) {
+			let found = false;
+			document.querySelectorAll('button[type="text"]').forEach((btn) => {
+				btn.childNodes.forEach((chd) => {
 					if (chd.tagName == "SPAN" && chd.innerText == text) {
-						return true;
+						found = true;
+						return;
 					}
-				}
-			}
-			return false;
+				})
+			})
+			return found;
 		}
 	}
 
@@ -147,52 +192,145 @@ if (/\bsel=-182985865\b/.test (location.search) ) {
 			return;
 		}*/
 		console.log(["Going to press", text]);
-		for (btn of document.querySelectorAll('button[type="text"]')) {
-			for (chd of btn.childNodes) {
+		let found = false;
+		document.querySelectorAll('button[type="text"]').forEach((btn) => {
+			btn.childNodes.forEach((chd) => {
 				if (chd.tagName == "SPAN" && chd.innerText == text) {
-					//console.log("Pressed");
-					chd.click();
+					log("Pressed");
+					if (player_state.input_enabled) {
+						chd.click();
+					}
+					found = true;
 					return;
 				}
-			}
+			})
+		});
+		if (!found) {
+			console.log(["Unable to find", text]);
 		}
-		console.log(["Unable to find", text]);
 	}
 
-	let press_lesser_button = () => {
-		let buttons = document.querySelectorAll('span[class=MessageKeyboard__label]');
-		let button = buttons[buttons.length - 1];
-		//console.log(["Going to press lesser"]);
-		button.click();
-	};
-
-	//console.log("Buttons end");
-	// buttons END
-
-	let base_subscriber = (action, callback) => {
-		subscribe(event_names.change_action, function(arg) {
-			if (arg.action == action) {
-				callback(arg);
+	let lesser_button = {
+		'press_last': () => {
+			let buttons = document.querySelectorAll('span[class=MessageKeyboard__label]');
+			let button = buttons[buttons.length - 1];
+			console.log(["Going to press last lesser"]);
+			if (player_state.input_enabled) {
+				button.click();
 			}
-		});
+		},
+		'press_by_name': (text) => {
+			let buttons = document.querySelectorAll('button[data-type=text]');
+			let button = null;
+			buttons.forEach((btn) => {
+				if (button) {
+					return;
+				}
+				if (btn.innerText && btn.innerText == text) {
+					button = btn;
+				}
+			});
+			console.log("Going to press lesser " + text);
+			if (player_state.input_enabled) {
+				button.click();
+			}
+		}
+	}
+
+	log("Buttons end");
+	// buttons END	
+
+	let fight_helper = {
+		'how_many_hits_to_die': () => {
+			let enrage_modifier =  1 + player_state.fight.enemy_enrages *0.2;
+			return player_state.fight.enemy_damage
+			? (player_state.hp / (player_state.fight.enemy_damage *1.1 *enrage_modifier))
+			: 9999;
+		},
+		'how_many_hits_to_kill': () => {
+			return player_state.fight.damage_to_enemy && player_state.fight.enemy_hp
+			? (player_state.fight.enemy_hp / (player_state.fight.damage_to_enemy *0.9))
+			: 9999;
+		},
+	}
+	
+	let base_subscriber = (action, callback) => {
+		return () => {
+			subscribe(event_names.change_action, function(arg) {
+				if (arg.action == action) {
+					callback(arg);
+				}
+			});
+		};
 	}
 
 	let subscribers = {
 		'rest': base_subscriber(actions.rest, function(arg) {
-			if (button_helper.is_button_available(button_labels.prepare_meal)) {
+			if (!player_state.rest.already_cooked && button_helper.is_button_available(button_labels.prepare_meal)) {
 				press_button(button_labels.prepare_meal);
+				player_state.rest.already_cooked = true;
 			}
 		}),
 		'use_potion': base_subscriber(actions.use_potion, function(arg) {
-			if (player_state.fight.used_potion) {
-				publish(event_names.change_action, {"action": actions.fight});
+			if (player_state.fight.using_potion) {
+
+				let available_potions = [];
+
+				let allowed_potions = player_state.settings.get_available_potions();
+
+				for (potion_type in allowed_potions) {
+					let potion_label = button_labels.potions[potion_type];
+					if (player_state.lesser_button_labels.includes(potion_label)) {
+						available_potions.push(potion_type);
+					}
+				}
+
+				let super_final_potion_type = null;
+				if (player_state.fight.enemy_damage) {
+					let potion_heal = null;
+					for (potion_type in available_potions) {
+						potion_type = available_potions[potion_type];
+						let value = allowed_potions[potion_type].value;
+						if (value > player_state.fight.enemy_damage) {
+							if (!potion_heal || potion_heal > value) {
+								potion_heal = value;
+								super_final_potion_type = potion_type;
+							}
+						}
+					}
+
+				}
+
+				if (super_final_potion_type == null){
+					let final_potion_type = null;
+					let potion_heal = null;
+					for (potion_type in available_potions) {
+						let value = allowed_potions[available_potions[potion_type]].value;
+						if (!potion_heal) {
+							potion_heal = value;
+							final_potion_type = potion_type;
+						}
+						if (value > potion_heal) {
+							potion_heal = value;
+							final_potion_type = potion_type;
+						}
+					}
+					super_final_potion_type = final_potion_type;
+				}
+
+				if (super_final_potion_type) {
+					lesser_button.press_by_name(button_labels.potions[available_potions[super_final_potion_type]]);
+				} else {
+					player_state.fight.unable_to_determine_potion = true;
+				}
+
+				player_state.fight.using_potion = false;
 			}
-			player_state.fight.used_potion = true;
 		}),
 		'interrupt': base_subscriber(actions.interrupt, function(arg) {
 			press_button(button_labels.interrupt);
 		}),
-		'fishing_hub': base_subscriber(actions.fishing_hub, function(arg) {	
+		'fishing_hub': base_subscriber(actions.fishing_hub, function(arg) {
 			if (player_state.fishing.bait_left > 0 && button_helper.is_button_available(button_labels.fishing.start_fishing)) {
 				press_button(button_labels.fishing.start_fishing);
 			} else if (button_helper.is_button_available(button_labels.fishing.stop_fishing)) {
@@ -200,48 +338,62 @@ if (/\bsel=-182985865\b/.test (location.search) ) {
 				player_state.confirm_exit = true;
 			}
 		}),
-		'progress': base_subscriber(actions.progress, function(arg) {	
-			console.log('Guessing progressing...');
+		'progress': base_subscriber(actions.progress, function(arg) {
+			log('Guessing progressing...');
+			if (button_helper.is_button_available(button_labels.utility.continue)) {
+				press_button(button_labels.utility.continue);
+			}
+			if (button_helper.is_button_available(button_labels.utility.be_free)) {
+				press_button(button_labels.utility.be_free);
+			}
+		}),
+		'open_chest': base_subscriber(actions.open_chest, function(arg) {
+			press_button(button_labels.utility.open_chest);
 		}),
 		'stand_in_hub': base_subscriber(actions.stand_in_hub, function(arg) {
-			if (player_state.getHealthPercentage() < 0.8) {
+			if (player_state.getHealthPercentage() < 1 - player_state.traumas*0.05 - 0.02) {
 				if (button_helper.is_button_available(button_labels.rest)) {
 					press_button(button_labels.rest);
 					//publish(event_names.change_action, {"action": actions.rest});
 				}
 				return;
 			}
-	
+
 			press_button(button_labels.progress);
 		}),
 		'fight': base_subscriber(actions.fight, function(arg) {
-			let how_many_hits_left = player_state.fight.enemy_damage
-				? (player_state.hp / (player_state.fight.enemy_damage *1.1))
-				: 9999;
-		
+			let how_many_hits_left = fight_helper.how_many_hits_to_die();
+			let how_many_hits_to_kill = fight_helper.how_many_hits_to_kill();
 			if (how_many_hits_left < 2) {
-				//console.log("Going to use potion");
-				press_button(button_labels.use_potion);
-				player_state.fight.using_potion = true;
-				return;
+				if (how_many_hits_left <= 1 || how_many_hits_to_kill > 1) {
+					if (!player_state.fight.unable_to_determine_potion) {
+						press_button(button_labels.use_potion);
+					}
+					player_state.fight.using_potion = true;
+					return;
+				}				
 			}
-	
-			if (how_many_hits_left < 4 && button_helper.is_button_available(button_labels.heal_skill)) {
-				press_button(button_labels.heal_skill);
-			} 
+
 			
-			if (button_helper.is_button_available(button_labels.split_skill)) {
-				press_button(button_labels.split_skill);
-			} else if (button_helper.is_button_available(button_labels.shadow_skill)) {
-				press_button(button_labels.shadow_skill);
-			} else {
-				press_button(button_labels.attack);
-			}
+
+			if (!player_state.fight.unable_to_use_skills) {
+				if (how_many_hits_left < 5 && button_helper.is_button_available(button_labels.heal_skill)) {
+					press_button(button_labels.heal_skill);
+					return;
+				}
 	
-			player_state.fight.used_potion = false;
+				if (button_helper.is_button_available(button_labels.split_skill)) {
+					press_button(button_labels.split_skill);
+					return
+				} else if (button_helper.is_button_available(button_labels.shadow_skill)) {
+					press_button(button_labels.shadow_skill);
+					return;
+				}
+			}
+			press_button(button_labels.attack);
 		}),
-		'lesser_action': base_subscriber(actions.lesser_action, function(arg) {
-			press_lesser_button();
+		'last_lesser_action': base_subscriber(actions.last_lesser_action, function(arg) {
+			lesser_button.press_last();
 		}),
 		'grab_fish': base_subscriber(actions.grab_fish, function(arg) {
 			if (player_state.fishing.grab_fish) {
@@ -256,27 +408,61 @@ if (/\bsel=-182985865\b/.test (location.search) ) {
 				}
 			});
 		},
+		'unset_unable_to_determine_potion': () => {
+			subscribe(event_names.after_action_change, (arg) => {
+				if (arg.action && arg.action == actions.fight) {
+					player_state.fight.unable_to_determine_potion = false;
+				}
+			});
+		},
+		'disable_cook_limit': () => {
+			subscribe(event_names.before_action_change, (arg) => {
+				if (arg.action && arg.action == actions.stand_in_hub) {
+					player_state.rest.already_cooked = false;
+				}
+			});
+		},		
+		'reset_damage_params': () => {
+			subscribe(event_names.before_action_change, (arg) => {
+				if (arg.action && player_state.action == actions.fight && arg.action != actions.fight && arg.action != actions.use_potion) {
+					player_state.fight.enemy_damage = null;
+					player_state.fight.damage_to_enemy = null;
+					player_state.fight.initial_enemy_damage = null;
+				}
+			});
+		},
+		'reset_enrage': () => {
+			subscribe(event_names.after_action_change, (arg) => {
+				if (arg.action && arg.action == actions.fight) {
+					player_state.fight.enemy_enrages = false;
+				}
+			});
+		},
 	};
 
-	let subscribe = () => {
+	let subscribe_all = () => {
 		for(sub in subscribers) {
-			sub();
+			subscribers[sub]();
 		}
 	};
-	subscribe();
+	subscribe_all();
 
 	let determine_next_action = (next_action_state) => {
 		if (next_action_state.lesser_action_available) {
 			if (player_state.fight.using_potion) {
 				return actions.use_potion;
 			}
-			return actions.lesser_action;
+			return actions.last_lesser_action;
+		}
+
+		if (button_helper.is_button_available(button_labels.utility.open_chest)) {
+			return actions.open_chest;
 		}
 
 		if (button_helper.is_button_available(button_labels.fishing.grab_fish)) {
 			return actions.grab_fish;
 		}
-		
+
 		if (button_helper.is_button_available(button_labels.prepare_meal)) {
 			return actions.rest;
 		}
@@ -298,10 +484,10 @@ if (/\bsel=-182985865\b/.test (location.search) ) {
 			return actions.interrupt;
 		}
 
-		return player_state.progress;
+		return actions.progress;
 	};
-	
-	let update_current_state = (next_action_state) => {		
+
+	let update_current_state = (next_action_state) => {
 		let update_health = () => {
 			if (next_action_state.player_hp) {
 				player_state.hp = next_action_state.player_hp;
@@ -322,18 +508,28 @@ if (/\bsel=-182985865\b/.test (location.search) ) {
 			}
 		}
 
-		let calculate_damage = (old_hp, new_hp, whos_damage) => {
-			if (old_hp && new_hp && new_hp < old_hp) {
-				let diff = old_hp - new_hp;
-				if (!whos_damage) {
-					return diff;
+		let calculate_damage = (old_hp, new_hp, whos_damage, min) => {
+			if (old_hp && new_hp) {
+				if (new_hp < old_hp) {
+					let diff = old_hp - new_hp;
+					if (!whos_damage) {
+						return diff;
+					} else {
+						if (min) {
+							return whos_damage > diff
+								? diff
+								: whos_damage;
+						} else {
+							return whos_damage > diff
+								? whos_damage
+								: diff;
+						}						
+					}
 				} else {
-					return whos_damage > diff
-							? whos_damage
-							: diff;
+					return whos_damage;
 				}
 			}
-			return null;
+			return whos_damage;
 		}
 		let update_enemy_damage = () => {
 			player_state.fight.enemy_damage = calculate_damage(
@@ -341,62 +537,103 @@ if (/\bsel=-182985865\b/.test (location.search) ) {
 				next_action_state.player_hp,
 				player_state.fight.enemy_damage
 			);
-			//console.log(['Enemy damage', player_state.fight.enemy_damage]);
+			log(['Enemy damage', player_state.fight.enemy_damage]);
 		}
 		let update_damage_to_enemy = () => {
 			player_state.fight.damage_to_enemy = calculate_damage(
 				player_state.fight.enemy_hp,
 				next_action_state.fight.enemy_hp,
-				player_state.fight.damage_to_enemy
+				player_state.fight.damage_to_enemy,
+				true
 			);
-			//console.log(['Player damage', player_state.fight.damage_to_enemy]);
+			log(['Player damage', player_state.fight.damage_to_enemy]);
+		}
+
+		let update_unable_to_use_skills = () => {
+			player_state.fight.unable_to_use_skills = next_action_state.fight.unable_to_use_skills;
 		}
 
 		let update_grab_fish = () => {
 			player_state.fishing.grab_fish = next_action_state.fishing.grab_fish;
 		}
 
-		update_health();
-		update_enemy_health();
+		let update_lesser_buttons = () => {
+			player_state.lesser_button_labels = next_action_state.lesser_buttons;
+		}
+
+		let update_potions_count = () => {
+			player_state.fight.potions = next_action_state.fight.potions_count;
+		};
+
+		let update_enemy_enrages = () => {
+			if (next_action_state.fight.enemy_enrages) {
+				player_state.fight.enemy_enrages++;
+			}
+		};
+
+		let update_traumas = () => {
+			if (next_action_state.traumas) {
+				player_state.traumas = next_action_state.traumas;
+			}
+		}
+
+		let update_initial_enemy_damage = () => {
+			if (next_action_state.fight.initial_enemy_damage) {
+				player_state.fight.initial_enemy_damage = next_action_state.fight.initial_enemy_damage;
+			}
+		}
+
+		update_initial_enemy_damage();
 		update_enemy_damage();
 		update_damage_to_enemy();
+		update_health();
+		update_enemy_health();
 		update_grab_fish();
+		update_lesser_buttons();
+		update_potions_count();
+		update_unable_to_use_skills();
+		update_enemy_enrages();
+		update_traumas();
 	};
 
 	let doNextAction = function(next_action_state) {
-		//console.log("Going to do next action");
+		log("Going to do next action");
 		let next_action = determine_next_action(next_action_state);
 		if (!next_action) {
 			return;
 		}
 
 		update_current_state(next_action_state);
-		player_state.action = next_action;
-		publish(event_names.before_action_change, {"action": next_action});
+		let new_action = player_state.action != next_action;
+		if (new_action) {
+			publish(event_names.before_action_change, {"action": next_action});
+		}
 		publish(event_names.change_action, {"action": next_action});
-		publish(event_names.after_action_change, {"action": next_action});
+		if (new_action) {
+			publish(event_names.after_action_change, {"action": next_action});
+		}
 	}
 
-	//console.log("Main logic end");
+	log("Main logic end");
 
 	let timeoutDelay = 3000;
 	const delay = ms => new Promise(res => setTimeout(res, ms));
 
 	let collectNextStateSource = () => {
-		//console.log("Analyse last messages");
+		//log("Analyse last messages");
 		var messages = document.querySelectorAll('div[class="im-mess-stack _im_mess_stack "]');
-		//console.log(messages);
+		//log(messages);
 		let last_messages = [];
 		let index = messages.length - 1;
-		//console.log(index);
+		//log(index);
 		while (index >= 0) {
 			let message = messages[index];
 			let link = message.getElementsByClassName('im_grid')[0];
-			//console.log(["link", link, link.tagName == "A", link.href == constants.WELL_HREF]);
+			//log(["link", link, link.tagName == "A", link.href == constants.WELL_HREF]);
 			if (link.tagName == "A") {
 				if (link.href == constants.WELL_HREF) {
 					last_messages.push(message);
-					//console.log("Valid link");
+					//log("Valid link");
 				} else {
 					break;
 				}
@@ -404,19 +641,18 @@ if (/\bsel=-182985865\b/.test (location.search) ) {
 			index--;
 		}
 
-		//console.log(last_messages);
+		//log(last_messages);
 		if (last_messages.length == 0) {
 			return {"error": "No messages"};
 		}
-		//console.log("Got some messages");
+		//log("Got some messages");
 		let next_state_source = {
 			"player_hp": null,
 			"player_max_hp": null,
 			"lesser_action_available": false,
-			"next_hp_is_player": false,
-			"next_hp_is_enemy": false,
+			'lesser_buttons': [],
+			'traumas': null,
 			"fishing": {
-				"bait_next": false,
 				"bait_left": 0,
 				"grab_fish": false,
 				"is": false,
@@ -424,56 +660,96 @@ if (/\bsel=-182985865\b/.test (location.search) ) {
 			"fight": {
 				'enemy_max_hp': null,
 				'enemy_hp': null,
+				'potions_left': null,
+				'unable_to_use_skills': false,
+				'enemy_enrages': false,
+				'initial_enemy_damage': null,
 			},
 		}
+		let states = {
+			"next_hp_is_player": false,
+			"next_hp_is_enemy": false,
+			"next_is_traumas": false,
+			'next_is_initial_enemy_damage': null,
+			'fishing': {
+				"bait_next": false,
+			}
+		}
+		let can_collect_potions_count = player_state.fight.using_potion;
 		for (last_message of last_messages) {
-			//console.log(['lm',last_message]);
+			//log(['lm',last_message]);
 			let list = last_message.getElementsByClassName('ui_clean_list im-mess-stack--mess _im_stack_messages')[0];
-			//console.log(['list', list]);
+			//log(['list', list]);
 			list.childNodes.forEach((item) => {
-				//console.log(['item',item]);
+				//log(['item',item]);
 				if(item.childNodes.length != 0) {
 					let content = item.getElementsByClassName('im-mess--text wall_module _im_log_body');
-					//console.log(['content', content]);
+					//log(['content', content]);
 					content.forEach((contentItem) => {
-						//console.log(['cI', contentItem]);
+						//log(['cI', contentItem]);
 						contentItem.childNodes.forEach((row) => {
-							//console.log(["row", row]);
+							//log(["row", row]);
 							if (row.nodeName == "#text") {
+								if (states.next_is_initial_enemy_damage) {									
+									let number = parseInt(row.data);
+									if (number) {
+										next_state_source.fight.initial_enemy_damage = number;
+									}
+									states.next_is_initial_enemy_damage = false;
+								}
+
+								if (states.next_is_traumas) {									
+									let text = row.data.split(': ')[1];
+									let number = parseInt(text);
+									if (number) {
+										next_state_source.traumas = number;
+									}
+									states.next_is_traumas = false;
+								}
+
+								if (can_collect_potions_count) {
+									let text = row.data.split(' ')[5];
+									if (text) {
+										let potions_count = parseInt(text.split('/')[0]);
+										next_state_source.fight.potions_left = potions_count;
+										can_collect_potions_count = false;
+									}
+								}
+
 								if (player_state.fishing.bait_left > 0 && row.data == texts.GRAB_FISH) {
 									next_state_source.fishing.grab_fish = true;
 								}
 
-								if (next_state_source.next_hp_is_player && row.data.startsWith("HP:")) {
+								if (states.next_hp_is_player && row.data.startsWith("HP:")) {
 									let text = row.data.split(' ')[1];
 									let now = parseInt(text.split('/')[0]);
 									let max = parseInt(text.split('/')[1]);
 									next_state_source.player_hp = now;
 									next_state_source.player_max_hp = max;
-									next_state_source.next_hp_is_player = false;
+									states.next_hp_is_player = false;
 								}
 
-								if (next_state_source.next_hp_is_enemy && row.data.includes(": ")) {
+								if (states.next_hp_is_enemy && row.data.includes(": ")) {
 									let text = row.data.split(': ')[1];
 									text = text.split(' ')[0];
 									let now = parseInt(text.split('/')[0]);
 									let max = parseInt(text.split('/')[1]);
 									next_state_source.fight.enemy_hp = now;
 									next_state_source.fight.enemy_max_hp = max;
-									next_state_source.next_hp_is_enemy = false;
+									states.next_hp_is_enemy = false;
 								}
 
-								if (next_state_source.fishing.bait_next) {
+								if (states.fishing.bait_next) {
 									let text = row.data.split(': ')[1];
 									next_state_source.fishing.bait_left = parseInt(text);
-									next_state_source.fishing.bait_next = false;
+									states.fishing.bait_next = false;
 								}
 							}
 
 							if (row.tagName == 'DIV') {
 								if (row.className.startsWith('_im_msg_media')) {
 									let lesser = row.getElementsByClassName('MessageKeyboard');
-									//console.log(lesser);
+									//log(lesser);
 									const validLesser = (lesser) => {
 										if (lesser.length <= 0) {
 											return false;
@@ -483,9 +759,26 @@ if (/\bsel=-182985865\b/.test (location.search) ) {
 
 									};
 									let lesser_action_exists = validLesser(lesser);
-									//console.log(['lae', lesser_action_exists]);
+									//log(['lae', lesser_action_exists]);
 									if (lesser_action_exists) {
-										next_state_source.lesser_action_available = true;
+										let lesser_buttons = [];
+										lesser.forEach((i) => {
+											let rows = i.getElementsByClassName('MessageKeyboard__row');
+											rows.forEach((lesser_row) => {
+												let cells = lesser_row.getElementsByClassName('MessageKeyboard__cell');
+												cells.forEach((cell) => {
+													cell.childNodes.forEach((childNode) => {
+														if (childNode.innerText) {
+															lesser_buttons.push(childNode.innerText);
+														}
+													})
+												})
+											});
+										});
+										next_state_source.lesser_buttons = lesser_buttons;
+										if (lesser_buttons.length > 0) {
+											next_state_source.lesser_action_available = true;
+										}
 									}
 								}
 							}
@@ -495,14 +788,26 @@ if (/\bsel=-182985865\b/.test (location.search) ) {
 							if (row.tagName == 'IMG') {
 								switch (row.alt) {
 									case "💚":
-										next_state_source.next_hp_is_player = true;
+										states.next_hp_is_player = true;
 										break;
 									case "❤":
-										next_state_source.next_hp_is_enemy = true;
+										states.next_hp_is_enemy = true;
 										break;
 									case "🐛":
-										next_state_source.fishing.bait_next = true
+										states.fishing.bait_next = true
 										next_state_source.fishing.is = true;
+										break;
+									case '🗣':
+										next_state_source.fight.unable_to_use_skills = true;
+										break;
+									case '🖤':
+										states.next_is_traumas = true;
+										break;
+									case '💢':
+										next_state_source.fight.enemy_enrages = true;
+										break;
+									case '⚔':
+										states.next_is_initial_enemy_damage = true;
 										break;
 								}
 							}
@@ -512,21 +817,21 @@ if (/\bsel=-182985865\b/.test (location.search) ) {
 			});
 
 		}
-		//console.log("State prepared");
+		log("State prepared");
 		return next_state_source;
 	}
 
 	const mainLoop = async () => {
-		//console.log(["Running", player_state.running]);
+		log(["Running", player_state.running]);
 		if (!player_state.running) {
 			return;
 		}
 
 		let next_state_source = collectNextStateSource();
 
-		//console.log(last_message_result);
+		log(next_state_source);
 		if (next_state_source.hasOwnProperty('error')) {
-			//console.log(last_message_result.error);
+			log(next_state_source.error);
 			return;
 		}
 
@@ -535,42 +840,189 @@ if (/\bsel=-182985865\b/.test (location.search) ) {
 
 	let ui = {
 		"createUi": function (main_player_state) {
-			let zNode = document.createElement ('div');
-			zNode.innerHTML = '<button id="myButton" type="button">Start/Stop</button>';
+			let ids = {
+                'container': 'myContainer',
+				'stop_button': 'stop_button',
+				'debug': 'debug',
+				'no_buttons': 'no_buttons',
+				'settings': {
+					'potions': 'potion_enabler',
+				},
+				'section': {
+					'potions': 'potions'
+				},
+				'element': {
+					'potion_handler': 'potion_handler',
+				}
+			};
 
-			zNode.setAttribute ('id', 'myContainer');
-			document.body.appendChild (zNode);
-
-			//--- Activate the newly added button.
-			document.getElementById ("myButton").addEventListener("click", ButtonClickAction, false);
-
-
-			let setRunningStateText = () => {
-				document.getElementById ("myButton").innerText = main_player_state.running ? "Stop" : "Start";
-				document.getElementById ("myButton").setAttribute('state', main_player_state.running ? "off" : "on");
+			let create_canvas = () => {
+				let zNode = document.createElement ('div');
+                zNode.id = ids.container;
+				document.body.appendChild (zNode);
+				return zNode;
 			}
-			setRunningStateText();
-			function ButtonClickAction (zEvent) {
-				main_player_state.running = !main_player_state.running;
-				setRunningStateText();
+
+			let create_stop_button = (canvas, main_player_state) => {
+				let button = document.createElement('button');
+				button.id = ids.stop_button;
+				button.innerText = 'Start/Stop';
+
+				let set_running_state_text = () => {
+					button.innerText = main_player_state.running ? "Stop" : "Start";
+					button.setAttribute('state', main_player_state.running ? "off" : "on");
+				}
+				set_running_state_text();
+				let button_click_action = (e) => {
+					main_player_state.running = !main_player_state.running;
+					set_running_state_text();
+				}
+				button.addEventListener("click", button_click_action, false);
+
+				canvas.appendChild(button);
 			}
 
+			let create_checkbox = (id, canvas, label_text, default_state, callback) => {
+				var div = document.createElement('div');
+				// creating checkbox element
+				var checkbox = document.createElement('input');
+
+				checkbox.addEventListener('change', callback);
+
+				// Assigning the attributes
+				// to created checkbox
+				checkbox.type = "checkbox";
+				checkbox.id = id;
+				checkbox.checked = default_state;
+
+				// creating label for checkbox
+				var label = document.createElement('label');
+
+				// assigning attributes for
+				// the created label tag
+				label.htmlFor = id;
+
+				// appending the created text to
+				// the created label tag
+				label.appendChild(document.createTextNode(label_text));
+
+				// appending the checkbox
+				// and label to div
+				div.appendChild(checkbox);
+				div.appendChild(label);
+				canvas.appendChild(div);
+			}
+
+			let create_debug_checkbox = (canvas, main_player_state) => {
+				create_checkbox(ids.debug, canvas, 'Debug', false, (event) => {
+					if (event.currentTarget.checked) {
+						main_player_state.debug = true;
+					} else {
+						main_player_state.debug = false;
+					}
+				});
+			}
+
+			let create_options = (canvas) => {
+				let create_potions_enabler = (options_canvas) => {
+					create_checkbox(ids.settings.potions, options_canvas, 'Зелья', false, (event) => {
+						let section = document.querySelectorAll('div#' + ids.section.potions)[0];
+						if (section) {
+							if (event.currentTarget.checked) {
+								section.style.display = 'block';
+							} else {
+								section.style.display = 'none';
+							}
+						}
+					});
+				};
+
+				create_potions_enabler(canvas);
+			}
+
+			let create_no_buttons_checkbox = (canvas, main_player_state) => {
+				create_checkbox(ids.no_buttons, canvas, 'Disable auto-press', true, (event) => {
+					if (event.currentTarget.checked) {
+						main_player_state.input_enabled = false;
+					} else {
+						main_player_state.input_enabled = true;
+					}
+				});
+			}
+
+			let create_potions_section = (canvas, main_player_state) => {				
+				let potion_section = document.createElement ('div');
+				potion_section.id = ids.section.potions;
+				potion_section.style.display = 'none';
+				canvas.appendChild(potion_section);
+
+				let create_potion = (canvas, potion_id, main_player_state) => {
+					var div = document.createElement('div');
+					div.id = ids.element.potion_handler;
+
+					// creating label for checkbox
+					var label = document.createElement('label');
+					label.htmlFor = potion_id;
+					label.innerText = button_labels.potions[potion_id];
+
+					var textarea = document.createElement('textarea');
+					textarea.id = potion_id;
+					textarea.rows = 1;
+					textarea.cols = 3;
+
+					// creating checkbox element
+					var checkbox = document.createElement('input');
+					checkbox.type = "checkbox";
+					checkbox.id = potion_id;
+					checkbox.checked = false;
+					checkbox.addEventListener('change', (event) => {
+						let potion_stat = {
+							'enabled': false,
+							'value': parseInt(textarea.value),
+						}
+						if (event.currentTarget.checked) {
+							potion_stat.enabled = true;
+						}
+						main_player_state.settings.available_potions[potion_id] = potion_stat;
+					});
+					div.appendChild(label);
+					div.appendChild(checkbox);
+					div.appendChild(textarea);
+					canvas.appendChild(div);
+				}
+
+				create_potion(potion_section, 'weak', main_player_state);
+				create_potion(potion_section, 'simple', main_player_state);
+				create_potion(potion_section, 'common', main_player_state);
+				create_potion(potion_section, 'big', main_player_state);
+				create_potion(potion_section, 'strong', main_player_state);
+			}
+
+			let canvas = create_canvas();
+			create_stop_button(canvas, main_player_state);
+			create_debug_checkbox(canvas, main_player_state);
+			create_no_buttons_checkbox(canvas, main_player_state);
+			create_options(canvas);
+			create_potions_section(canvas, main_player_state);
 			//--- Style our newly added elements using CSS.
 			GM_addStyle ( `
 			#myContainer {
 				position:               fixed;
-				top:                    83.5%;
-				left:                   62.5%;
+				top:                    50%;
+				left:                   75%;
 				font-size:              20px;
 				z-index:                1100;
 			}
-			#myButton {
+			#myContainer > * {
+				display: block;
+			}
+			#stop_button {
 				cursor:                 pointer;
 			}
-			#myButton[state='off'] {
+			#stop_button[state='off'] {
 				background-color: red;
 			}
-			#myButton[state='on'] {
+			#stop_button[state='on'] {
 				background-color: #32CD32;
 			}
 			` );
@@ -584,5 +1036,5 @@ if (/\bsel=-182985865\b/.test (location.search) ) {
 			mainLoop();
 		} while(true);
 	})();
-	//console.log("Infinity ended");
+	log("Infinity ended");
 }

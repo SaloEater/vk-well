@@ -22,6 +22,7 @@ if (/\bsel=-182985865\b/.test (location.search) ) {
 		'stand_in_hub': 8,
 		'grab_fish': 9,
 		'open_chest': 10,
+		'flee': 11,
 	}
 
 	let player_state = {
@@ -40,9 +41,11 @@ if (/\bsel=-182985865\b/.test (location.search) ) {
 			'grab_fish': false
 		},
 		"fight": {
+			'secondary_action_available': true,
 			'using_potion': false,
-			'unable_to_use_skills': true,
-			'potions': -1,
+			'can_use_skills': true,
+			'potions': null,
+			'max_potions': null,
 			'enemy_max_hp': null,
 			'enemy_hp': null,
 			'enemy_damage': null,
@@ -50,6 +53,10 @@ if (/\bsel=-182985865\b/.test (location.search) ) {
 			'unable_to_determine_potion': false,
 			'enemy_enrages': 0,
 			'initial_enemy_damage': null,
+			'pvp_peace_available': false,
+			'is_pvp': false,
+			'can_use_potions': true,
+			'flee': false,
 		},
 		'rest': {
 			'already_cooked': false,
@@ -147,11 +154,13 @@ if (/\bsel=-182985865\b/.test (location.search) ) {
 		"split_skill": "|Раскол|",
 		"attack": "Атака",
 		"use_potion": "Зелье",
-		"flee": "Сбежать",
 		"skin": "Освеживать",
 		"search": "Обыскать",
 		"interrupt": "Прервать",
 		'back': 'Назад',
+		'fight': {
+			'flee': 'Сбежать',
+		},
 		"fishing": {
 			"start_fishing": "Закинуть удочку",
 			"stop_fishing": "Прервать рыбалку",
@@ -163,11 +172,18 @@ if (/\bsel=-182985865\b/.test (location.search) ) {
 			'common': 'Обычное зелье',
 			'big': 'Большое зелье',
 			'strong': 'Сильное зелье',
+			'wonderful': 'Чудесное зелье',
 		},
 		'utility': {
 			'open_chest': 'Открыть',
 			"continue": "Продолжить",
-			"be_free": "Освободиться",
+			"flee": "Освободиться",
+			'pvp_peace': 'Перемирие',
+			'confirm_flee': 'Подтвердить',
+			'leave': 'Покинуть',
+		},
+		'secondary': {
+			'accuracy': 'Яркий свет',
 		}
 	}
 
@@ -241,10 +257,10 @@ if (/\bsel=-182985865\b/.test (location.search) ) {
 	// buttons END	
 
 	let fight_helper = {
-		'how_many_hits_to_die': () => {
-			let enrage_modifier =  1 + player_state.fight.enemy_enrages *0.2;
-			return player_state.fight.enemy_damage
-			? (player_state.hp / (player_state.fight.enemy_damage *1.1 *enrage_modifier))
+		'how_many_hits_to_die': function () {
+			let enemy_damage = this.get_complete_enemy_damage();
+			return player_state.hp && enemy_damage
+			? player_state.hp / enemy_damage
 			: 9999;
 		},
 		'how_many_hits_to_kill': () => {
@@ -252,6 +268,11 @@ if (/\bsel=-182985865\b/.test (location.search) ) {
 			? (player_state.fight.enemy_hp / (player_state.fight.damage_to_enemy *0.9))
 			: 9999;
 		},
+		'get_complete_enemy_damage': function () {
+			let enrage_modifier =  1 + player_state.fight.enemy_enrages *0.2;
+			let enemy_damage = player_state.fight.initial_enemy_damage ?? (player_state.fight.enemy_damage ?? null);
+			return enemy_damage ? enemy_damage *1.1 *enrage_modifier : null;
+		}
 	}
 	
 	let base_subscriber = (action, callback) => {
@@ -275,7 +296,6 @@ if (/\bsel=-182985865\b/.test (location.search) ) {
 			if (player_state.fight.using_potion) {
 
 				let available_potions = [];
-
 				let allowed_potions = player_state.settings.get_available_potions();
 
 				for (potion_type in allowed_potions) {
@@ -285,13 +305,17 @@ if (/\bsel=-182985865\b/.test (location.search) ) {
 					}
 				}
 
+				let enemy_hit = fight_helper.get_complete_enemy_damage();
+				let need_hp = enemy_hit * 2 - player_state.hp;
+				need_hp = need_hp * (1 + (0.5 * (player_state.fight.max_potions - player_state.fight.potions)));
+
 				let super_final_potion_type = null;
-				if (player_state.fight.enemy_damage) {
+				if (enemy_hit) {
 					let potion_heal = null;
 					for (potion_type in available_potions) {
-						potion_type = available_potions[potion_type];
-						let value = allowed_potions[potion_type].value;
-						if (value > player_state.fight.enemy_damage) {
+						let potion = available_potions[potion_type];
+						let value = allowed_potions[potion].value;
+						if (value > need_hp) {
 							if (!potion_heal || potion_heal > value) {
 								potion_heal = value;
 								super_final_potion_type = potion_type;
@@ -325,6 +349,7 @@ if (/\bsel=-182985865\b/.test (location.search) ) {
 				}
 
 				player_state.fight.using_potion = false;
+				player_state.fight.secondary_action_available = false;
 			}
 		}),
 		'interrupt': base_subscriber(actions.interrupt, function(arg) {
@@ -343,8 +368,11 @@ if (/\bsel=-182985865\b/.test (location.search) ) {
 			if (button_helper.is_button_available(button_labels.utility.continue)) {
 				press_button(button_labels.utility.continue);
 			}
-			if (button_helper.is_button_available(button_labels.utility.be_free)) {
-				press_button(button_labels.utility.be_free);
+			if (button_helper.is_button_available(button_labels.utility.flee)) {
+				press_button(button_labels.utility.flee);
+			}
+			if (button_helper.is_button_available(button_labels.utility.leave)) {
+				//press_button(button_labels.utility.leave);
 			}
 		}),
 		'open_chest': base_subscriber(actions.open_chest, function(arg) {
@@ -362,35 +390,60 @@ if (/\bsel=-182985865\b/.test (location.search) ) {
 			press_button(button_labels.progress);
 		}),
 		'fight': base_subscriber(actions.fight, function(arg) {
-			let how_many_hits_left = fight_helper.how_many_hits_to_die();
+			let how_many_hits_to_die = fight_helper.how_many_hits_to_die();
 			let how_many_hits_to_kill = fight_helper.how_many_hits_to_kill();
-			if (how_many_hits_left < 2) {
-				if (how_many_hits_left <= 1 || how_many_hits_to_kill > 1) {
-					if (!player_state.fight.unable_to_determine_potion) {
-						press_button(button_labels.use_potion);
+			let heal_available = button_helper.is_button_available(button_labels.heal_skill);
+			if (player_state.fight.secondary_action_available) {
+				if (!heal_available && how_many_hits_to_kill != 9999 && how_many_hits_to_kill > how_many_hits_to_die && player_state.fight.potions && player_state.fight.potions < 1) {
+					press_button(button_labels.fight.flee);
+					player_state.fight.secondary_action_available = false;
+					player_state.fight.flee = true;
+					return;
+				}
+
+				if (how_many_hits_to_die < 2 && (!heal_available || !player_state.fight.can_use_skills)) {
+					if (player_state.fight.initial_enemy_damage) {
+						player_state.fight.can_use_potions = true;	
 					}
-					player_state.fight.using_potion = true;
-					return;
-				}				
-			}
 
-			
+					if ((how_many_hits_to_die <= 1 || how_many_hits_to_kill > 1) && player_state.fight.can_use_potions) {
+						if (!player_state.fight.unable_to_determine_potion) {
+							press_button(button_labels.use_potion);
+						}
+						player_state.fight.using_potion = true;
+						return;
+					}				
+				}
 
-			if (!player_state.fight.unable_to_use_skills) {
-				if (how_many_hits_left < 5 && button_helper.is_button_available(button_labels.heal_skill)) {
-					press_button(button_labels.heal_skill);
-					return;
+				if (button_helper.is_button_available(button_labels.secondary.accuracy)) {					
+					press_button(button_labels.secondary.accuracy);
+					player_state.fight.secondary_action_available = false;
 				}
-	
-				if (button_helper.is_button_available(button_labels.split_skill)) {
-					press_button(button_labels.split_skill);
-					return
-				} else if (button_helper.is_button_available(button_labels.shadow_skill)) {
-					press_button(button_labels.shadow_skill);
-					return;
+			}			
+
+			if (player_state.fight.is_pvp) {
+				if (player_state.fight.pvp_peace_available) {
+					if (button_helper.is_button_available(button_labels.utility.pvp_peace)) {	
+						press_button(button_labels.utility.pvp_peace);
+						return;
+					}
+				} else {
+					player_state.fight.is_pvp = false;
 				}
+			} else {
+				let attack = button_labels.attack;
+				if (player_state.fight.can_use_skills) {
+					if ((how_many_hits_to_die < 5 || how_many_hits_to_kill == 1) && heal_available) {
+						attack = button_labels.heal_skill;
+					} else if (button_helper.is_button_available(button_labels.split_skill)) {
+						attack = button_labels.split_skill;
+					} else if (button_helper.is_button_available(button_labels.shadow_skill)) {
+						attack = button_labels.shadow_skill;
+					}
+				}
+				press_button(attack);			
+				player_state.fight.secondary_action_available = true;
 			}
-			press_button(button_labels.attack);
 		}),
 		'last_lesser_action': base_subscriber(actions.last_lesser_action, function(arg) {
 			lesser_button.press_last();
@@ -399,6 +452,11 @@ if (/\bsel=-182985865\b/.test (location.search) ) {
 			if (player_state.fishing.grab_fish) {
 				press_button(button_labels.fishing.grab_fish);
 				return;
+			}
+		}),
+		'flee': base_subscriber(actions.grab_fish, function(arg) {
+			if (player_state.fight.flee) {
+				press_button(button_labels.utility.confirm_flee);
 			}
 		}),
 		'after_action_change': () => {
@@ -428,6 +486,15 @@ if (/\bsel=-182985865\b/.test (location.search) ) {
 					player_state.fight.enemy_damage = null;
 					player_state.fight.damage_to_enemy = null;
 					player_state.fight.initial_enemy_damage = null;
+					player_state.fight.is_pvp = false;
+					player_state.fight.pvp_peace_available = false;
+					player_state.fight.enemy_hp = null;
+					player_state.fight.enemy_max_hp = null;
+					player_state.fight.initial_enemy_damage = null;
+					player_state.fight.enemy_enrages = 0;
+					player_state.fight.can_use_potions = true;
+					player_state.fight.can_use_skills = true;
+					player_state.fight.flee = false;
 				}
 			});
 		},
@@ -448,11 +515,16 @@ if (/\bsel=-182985865\b/.test (location.search) ) {
 	subscribe_all();
 
 	let determine_next_action = (next_action_state) => {
+
 		if (next_action_state.lesser_action_available) {
 			if (player_state.fight.using_potion) {
 				return actions.use_potion;
 			}
 			return actions.last_lesser_action;
+		}
+
+		if (player_state.fight.flee && button_helper.is_button_available(button_labels.fight.flee)) {
+			return actions.flee;
 		}
 
 		if (button_helper.is_button_available(button_labels.utility.open_chest)) {
@@ -537,6 +609,9 @@ if (/\bsel=-182985865\b/.test (location.search) ) {
 				next_action_state.player_hp,
 				player_state.fight.enemy_damage
 			);
+			if (player_state.fight.enemy_damage) {
+				player_state.fight.initial_enemy_damage = null;
+			}
 			log(['Enemy damage', player_state.fight.enemy_damage]);
 		}
 		let update_damage_to_enemy = () => {
@@ -550,7 +625,9 @@ if (/\bsel=-182985865\b/.test (location.search) ) {
 		}
 
 		let update_unable_to_use_skills = () => {
-			player_state.fight.unable_to_use_skills = next_action_state.fight.unable_to_use_skills;
+			if (player_state.action != actions.use_potion) {				
+				player_state.fight.can_use_skills = next_action_state.fight.can_use_skills;
+			}
 		}
 
 		let update_grab_fish = () => {
@@ -562,7 +639,10 @@ if (/\bsel=-182985865\b/.test (location.search) ) {
 		}
 
 		let update_potions_count = () => {
-			player_state.fight.potions = next_action_state.fight.potions_count;
+			player_state.fight.potions = next_action_state.fight.potions_left;
+			if (!player_state.fight.potions) {
+				player_state.fight.max_potions = player_state.fight.potions;
+			}
 		};
 
 		let update_enemy_enrages = () => {
@@ -583,6 +663,20 @@ if (/\bsel=-182985865\b/.test (location.search) ) {
 			}
 		}
 
+		let update_pvp_state = () => {
+			if (next_action_state.fight.pvp_peace_available) {
+				player_state.fight.pvp_peace_available = next_action_state.fight.pvp_peace_available;
+				player_state.fight.is_pvp = true;
+			}
+		}
+
+		let update_can_use_potions = () => {
+			if (next_action_state.fight.can_use_potions == false) {
+				player_state.fight.can_use_potions = next_action_state.fight.can_use_potions;
+				player_state.fight.potions = 0;
+			}
+		}
+
 		update_initial_enemy_damage();
 		update_enemy_damage();
 		update_damage_to_enemy();
@@ -594,6 +688,8 @@ if (/\bsel=-182985865\b/.test (location.search) ) {
 		update_unable_to_use_skills();
 		update_enemy_enrages();
 		update_traumas();
+		update_pvp_state();
+		update_can_use_potions();
 	};
 
 	let doNextAction = function(next_action_state) {
@@ -661,9 +757,11 @@ if (/\bsel=-182985865\b/.test (location.search) ) {
 				'enemy_max_hp': null,
 				'enemy_hp': null,
 				'potions_left': null,
-				'unable_to_use_skills': false,
+				'can_use_skills': true,
 				'enemy_enrages': false,
 				'initial_enemy_damage': null,
+				'pvp_peace_available': false,
+				'can_use_potions': true,
 			},
 		}
 		let states = {
@@ -671,11 +769,12 @@ if (/\bsel=-182985865\b/.test (location.search) ) {
 			"next_hp_is_enemy": false,
 			"next_is_traumas": false,
 			'next_is_initial_enemy_damage': null,
+			'skip_next_lesser': false,
 			'fishing': {
 				"bait_next": false,
 			}
 		}
-		let can_collect_potions_count = player_state.fight.using_potion;
+		let can_collect_potions_count = player_state.action == actions.use_potion;
 		for (last_message of last_messages) {
 			//log(['lm',last_message]);
 			let list = last_message.getElementsByClassName('ui_clean_list im-mess-stack--mess _im_stack_messages')[0];
@@ -720,8 +819,8 @@ if (/\bsel=-182985865\b/.test (location.search) ) {
 									next_state_source.fishing.grab_fish = true;
 								}
 
-								if (states.next_hp_is_player && row.data.startsWith("HP:")) {
-									let text = row.data.split(' ')[1];
+								if (states.next_hp_is_player) {
+									let text = row.data.split(': ')[1];
 									let now = parseInt(text.split('/')[0]);
 									let max = parseInt(text.split('/')[1]);
 									next_state_source.player_hp = now;
@@ -777,7 +876,10 @@ if (/\bsel=-182985865\b/.test (location.search) ) {
 										});
 										next_state_source.lesser_buttons = lesser_buttons;
 										if (lesser_buttons.length > 0) {
-											next_state_source.lesser_action_available = true;
+											if (!states.skip_next_lesser) {
+												next_state_source.lesser_action_available = true;
+											} 
+											states.skip_next_lesser = false;
 										}
 									}
 								}
@@ -798,7 +900,7 @@ if (/\bsel=-182985865\b/.test (location.search) ) {
 										next_state_source.fishing.is = true;
 										break;
 									case '🗣':
-										next_state_source.fight.unable_to_use_skills = true;
+										next_state_source.fight.can_use_skills = false;
 										break;
 									case '🖤':
 										states.next_is_traumas = true;
@@ -808,6 +910,18 @@ if (/\bsel=-182985865\b/.test (location.search) ) {
 										break;
 									case '⚔':
 										states.next_is_initial_enemy_damage = true;
+										break;
+									case '🌿':
+										states.skip_next_lesser = true;
+										break;
+									case '🍄':
+										states.skip_next_lesser = true;
+										break;
+									case '👥':
+										next_state_source.fight.pvp_peace_available = true;
+										break;
+									case '⛔':
+										next_state_source.fight.can_use_potions = false;
 										break;
 								}
 							}
@@ -996,6 +1110,7 @@ if (/\bsel=-182985865\b/.test (location.search) ) {
 				create_potion(potion_section, 'common', main_player_state);
 				create_potion(potion_section, 'big', main_player_state);
 				create_potion(potion_section, 'strong', main_player_state);
+				create_potion(potion_section, 'wonderful', main_player_state);
 			}
 
 			let canvas = create_canvas();
@@ -1008,7 +1123,7 @@ if (/\bsel=-182985865\b/.test (location.search) ) {
 			GM_addStyle ( `
 			#myContainer {
 				position:               fixed;
-				top:                    50%;
+				top:                    15%;
 				left:                   75%;
 				font-size:              20px;
 				z-index:                1100;

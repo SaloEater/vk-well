@@ -61,6 +61,9 @@ if (/\bsel=-182985865\b/.test (location.search) ) {
 		'rest': {
 			'already_cooked': false,
 		},
+		'utility': {
+			'prevention_icon': false,
+		},
 		"confirm_exit": false,
 		'lesser_button_labels': [],
 		'settings': {
@@ -306,48 +309,55 @@ if (/\bsel=-182985865\b/.test (location.search) ) {
 				}
 
 				let enemy_hit = fight_helper.get_complete_enemy_damage();
-				let need_hp = enemy_hit * 2 - player_state.hp;
-				need_hp = need_hp * (1 + (0.5 * (player_state.fight.max_potions - player_state.fight.potions)));
-
-				let super_final_potion_type = null;
-				if (enemy_hit) {
-					let potion_heal = null;
-					for (potion_type in available_potions) {
-						let potion = available_potions[potion_type];
-						let value = allowed_potions[potion].value;
-						if (value > need_hp) {
-							if (!potion_heal || potion_heal > value) {
-								potion_heal = value;
-								super_final_potion_type = potion_type;
+				let want_hp = enemy_hit *2;
+				want_hp = want_hp *(1 +(0.5 *(player_state.fight.max_potions -player_state.fight.potions)));
+				
+				let need_hp = want_hp - player_state.hp;
+				
+				if (need_hp > 0) {
+					let new_hp = player_state.hp + need_hp;
+					let overheal = player_state.max_hp - new_hp;
+					if (overheal < 0 || (overheal > 0 && overheal/player_state.max_hp < 0.15)) {					
+						let super_final_potion_type = null;
+						if (enemy_hit) {
+							let potion_heal = null;
+							for (potion_type in available_potions) {
+								let potion = available_potions[potion_type];
+								let value = allowed_potions[potion].value;
+								if (value > need_hp) {
+									if (!potion_heal || potion_heal > value) {
+										potion_heal = value;
+										super_final_potion_type = potion_type;
+									}
+								}
 							}
+
+						}
+
+						if (super_final_potion_type == null){
+							let final_potion_type = null;
+							let potion_heal = null;
+							for (potion_type in available_potions) {
+								let value = allowed_potions[available_potions[potion_type]].value;
+								if (!potion_heal) {
+									potion_heal = value;
+									final_potion_type = potion_type;
+								}
+								if (value > potion_heal) {
+									potion_heal = value;
+									final_potion_type = potion_type;
+								}
+							}
+							super_final_potion_type = final_potion_type;
+						}
+
+						if (super_final_potion_type) {
+							lesser_button.press_by_name(button_labels.potions[available_potions[super_final_potion_type]]);
+						} else {
+							player_state.fight.unable_to_determine_potion = true;
 						}
 					}
-
 				}
-
-				if (super_final_potion_type == null){
-					let final_potion_type = null;
-					let potion_heal = null;
-					for (potion_type in available_potions) {
-						let value = allowed_potions[available_potions[potion_type]].value;
-						if (!potion_heal) {
-							potion_heal = value;
-							final_potion_type = potion_type;
-						}
-						if (value > potion_heal) {
-							potion_heal = value;
-							final_potion_type = potion_type;
-						}
-					}
-					super_final_potion_type = final_potion_type;
-				}
-
-				if (super_final_potion_type) {
-					lesser_button.press_by_name(button_labels.potions[available_potions[super_final_potion_type]]);
-				} else {
-					player_state.fight.unable_to_determine_potion = true;
-				}
-
 				player_state.fight.using_potion = false;
 				player_state.fight.secondary_action_available = false;
 			}
@@ -393,12 +403,14 @@ if (/\bsel=-182985865\b/.test (location.search) ) {
 			let how_many_hits_to_die = fight_helper.how_many_hits_to_die();
 			let how_many_hits_to_kill = fight_helper.how_many_hits_to_kill();
 			let heal_available = button_helper.is_button_available(button_labels.heal_skill);
-			if (player_state.fight.secondary_action_available) {
-				if (!heal_available && how_many_hits_to_kill != 9999 && how_many_hits_to_kill > how_many_hits_to_die && player_state.fight.potions && player_state.fight.potions < 1) {
-					press_button(button_labels.fight.flee);
-					player_state.fight.secondary_action_available = false;
-					player_state.fight.flee = true;
-					return;
+			if (player_state.fight.secondary_action_available && !player_state.utility.prevention_icon) {
+				if (!heal_available && how_many_hits_to_kill != 9999 && how_many_hits_to_kill > how_many_hits_to_die) {
+					if (player_state.fight.potions && player_state.fight.potions < 1) {
+						press_button(button_labels.fight.flee);
+						player_state.fight.secondary_action_available = false;
+						player_state.fight.flee = true;
+						return;
+					}
 				}
 
 				if (how_many_hits_to_die < 2 && (!heal_available || !player_state.fight.can_use_skills)) {
@@ -639,9 +651,11 @@ if (/\bsel=-182985865\b/.test (location.search) ) {
 		}
 
 		let update_potions_count = () => {
-			player_state.fight.potions = next_action_state.fight.potions_left;
-			if (!player_state.fight.potions) {
-				player_state.fight.max_potions = player_state.fight.potions;
+			if (next_action_state.fight.potions_left || next_action_state.fight.potions_left == 0) {				
+				player_state.fight.potions = next_action_state.fight.potions_left;
+				if (!player_state.fight.potions) {
+					player_state.fight.max_potions = player_state.fight.potions;
+				}
 			}
 		};
 
@@ -675,6 +689,10 @@ if (/\bsel=-182985865\b/.test (location.search) ) {
 				player_state.fight.can_use_potions = next_action_state.fight.can_use_potions;
 				player_state.fight.potions = 0;
 			}
+		}
+		
+		let update_prevention_icon = () => {
+			player_state.utility.prevention_icon = next_action_state.utility.prevention_icon;
 		}
 
 		update_initial_enemy_damage();
@@ -763,6 +781,9 @@ if (/\bsel=-182985865\b/.test (location.search) ) {
 				'pvp_peace_available': false,
 				'can_use_potions': true,
 			},
+			'utility': {
+				'prevention_icon': false,
+			}
 		}
 		let states = {
 			"next_hp_is_player": false,
@@ -922,6 +943,9 @@ if (/\bsel=-182985865\b/.test (location.search) ) {
 										break;
 									case '⛔':
 										next_state_source.fight.can_use_potions = false;
+										break;
+									case '🚫':
+										next_state_source.utility.prevention_icon = true;
 										break;
 								}
 							}
